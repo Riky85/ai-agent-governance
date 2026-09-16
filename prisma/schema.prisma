@@ -1,0 +1,289 @@
+// AI Agent Control Plane — core data model
+// Source of truth for agents, permissions, policies, activity and evidence.
+// Claude/LLM output is never written here as fact without going through
+// these deterministic tables (see src/lib/risk-engine.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Environment {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+}
+
+enum Autonomy {
+  ASSIST
+  RECOMMEND
+  SEMI_AUTONOMOUS
+  AUTONOMOUS
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+enum ActivityStatus {
+  ALLOWED
+  BLOCKED
+  FLAGGED
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users        User[]
+  agents       Agent[]
+  tools        Tool[]
+  dataAssets   DataAsset[]
+  policies     Policy[]
+  integrations Integration[]
+  evidence     Evidence[]
+}
+
+model User {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  name           String?
+  role           String   @default("member") // owner | admin | member
+  createdAt      DateTime @default(now())
+
+  ownedAgents Agent[]     @relation("AgentOwner")
+  approvals   Approval[]
+
+  @@unique([organizationId, email])
+}
+
+model Integration {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider       String   // e.g. "microsoft_entra", "github", "openai", "anthropic"
+  status         String   @default("connected") // connected | error | disconnected
+  lastSyncedAt   DateTime?
+  createdAt      DateTime @default(now())
+
+  agents Agent[]
+}
+
+model Agent {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  department  String?
+  model       String?      // e.g. "Claude Sonnet 4.6"
+  framework   String?      // e.g. "LangGraph", "Custom", "OpenAI Agents SDK"
+  environment Environment  @default(DEVELOPMENT)
+  autonomy    Autonomy     @default(ASSIST)
+  status      String       @default("active") // active | disabled | archived
+
+  ownerId       String?
+  owner         User?        @relation("AgentOwner", fields: [ownerId], references: [id])
+  integrationId String?
+  integration   Integration? @relation(fields: [integrationId], references: [id])
+
+  discoveredAt DateTime  @default(now())
+  lastActiveAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  permissions     AgentPermission[]
+  dataAccess      AgentDataAccess[]
+  activities      Activity[]
+  incidents       Incident[]
+  riskAssessments RiskAssessment[]
+
+  @@index([organizationId])
+}
+
+model Tool {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String   // e.g. "Salesforce", "Email", "ERP", "Pricing API"
+  category       String?  // crm | email | erp | payments | internal_api ...
+  createdAt      DateTime @default(now())
+
+  permissions AgentPermission[]
+
+  @@unique([organizationId, name])
+}
+
+model DataAsset {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String   // e.g. "Customer PII", "Contracts", "Employee data"
+  sensitivity    String   @default("internal") // public | internal | confidential | pii | financial
+  createdAt      DateTime @default(now())
+
+  access AgentDataAccess[]
+
+  @@unique([organizationId, name])
+}
+
+model AgentPermission {
+  id        String            @id @default(cuid())
+  agentId   String
+  agent     Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  toolId    String
+  tool      Tool              @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  action    String            // read | write | execute | delete | send
+  effect    PermissionEffect  @default(ALLOW)
+  requiresApproval Boolean    @default(false)
+  createdAt DateTime          @default(now())
+
+  @@index([agentId])
+  @@index([toolId])
+}
+
+model AgentDataAccess {
+  id          String    @id @default(cuid())
+  agentId     String
+  agent       Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  dataAssetId String
+  dataAsset   DataAsset @relation(fields: [dataAssetId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([agentId, dataAssetId])
+}
+
+model Policy {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String
+  rule           Json     // deterministic rule definition evaluated by the rule engine
+  enabled        Boolean  @default(true)
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  evaluations PolicyEvaluation[]
+  incidents   Incident[]
+}
+
+model PolicyEvaluation {
+  id         String   @id @default(cuid())
+  policyId   String
+  policy     Policy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  activityId String?
+  activity   Activity? @relation(fields: [activityId], references: [id])
+  passed     Boolean
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([policyId])
+}
+
+model Activity {
+  id        String         @id @default(cuid())
+  agentId   String
+  agent     Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tool      String
+  action    String
+  target    String?
+  status    ActivityStatus @default(ALLOWED)
+  reason    String?
+  metadata  Json?
+  createdAt DateTime       @default(now())
+
+  policyEvaluations PolicyEvaluation[]
+  incident          Incident?
+
+  @@index([agentId, createdAt])
+}
+
+model RiskAssessment {
+  id        String    @id @default(cuid())
+  agentId   String
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  level     RiskLevel
+  score     Int       // 0-100, deterministic — see risk-engine.ts
+  reasons   Json      // string[] of contributing factors
+  mitigations Json    // string[] of applied mitigations
+  createdAt DateTime  @default(now())
+
+  @@index([agentId, createdAt])
+}
+
+model Incident {
+  id         String           @id @default(cuid())
+  agentId    String
+  agent      Agent            @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  activityId String?          @unique
+  activity   Activity?        @relation(fields: [activityId], references: [id])
+  policyId   String?
+  policy     Policy?          @relation(fields: [policyId], references: [id])
+  severity   IncidentSeverity
+  status     IncidentStatus   @default(OPEN)
+  title      String
+  description String
+  createdAt  DateTime         @default(now())
+  resolvedAt DateTime?
+
+  approvals Approval[]
+
+  @@index([agentId])
+}
+
+model Approval {
+  id         String   @id @default(cuid())
+  incidentId String
+  incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  decision   String   // approve | deny
+  note       String?
+  createdAt  DateTime @default(now())
+}
+
+model Evidence {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type           String   // inventory_snapshot | risk_report | policy_export | audit_log_export
+  summary        String
+  payload        Json
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, type])
+}
