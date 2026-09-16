@@ -73,3 +73,5 @@ See `prisma/schema.prisma`. Tables: `organizations`, `users`, `agents`,
 `tools`, `data_assets`, `agent_permissions`, `agent_data_access`,
 `policies`, `policy_evaluations`, `activities`, `risk_assessments`,
 `incidents`, `approvals`, `evidence`, `integrations`.
+
+<!-- trigger fresh build to pick up preDeployCommand (db push + seed) -->
