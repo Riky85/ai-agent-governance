@@ -31,6 +31,17 @@ and a basic evidence view.
 These are the natural next milestones per the phased roadmap discussed
 for this project.
 
+## Known follow-up: dependency advisories
+
+`npm audit` currently reports advisories against `next@14.2.x` that are
+only fully patched in the `next@16.x` line (a breaking major upgrade).
+None of the specific attack vectors listed (Image Optimization API,
+custom Middleware, Server Actions, i18n rewrites, WebSocket upgrades)
+are used by this app today, so it was left on `14.2.35` (latest patch
+on the 14.2 line) rather than risk an untested major upgrade in this
+first scaffold. Revisit before this is exposed as a real production
+system.
+
 ## Local development
 
 ```bash

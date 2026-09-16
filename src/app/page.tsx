@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import StatCard from "@/components/StatCard";
 import Badge from "@/components/Badge";
+
+export const dynamic = "force-dynamic";
 import Link from "next/link";
 
 const ORG_ID = "demo-org";

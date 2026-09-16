@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import Badge from "@/components/Badge";
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
 const ORG_ID = "demo-org";
 
 export default async function IncidentsPage() {

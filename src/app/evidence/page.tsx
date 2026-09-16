@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 const ORG_ID = "demo-org";
 
 export default async function EvidencePage() {

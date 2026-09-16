@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import Badge from "@/components/Badge";
 import { notFound } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 export default async function AgentDetailPage({ params }: { params: { id: string } }) {
   const agent = await db.agent.findUnique({
     where: { id: params.id },
